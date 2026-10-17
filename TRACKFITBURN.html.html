@@ -1,0 +1,960 @@
+<!DOCTYPE html>
+<html lang="es" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PulseBurn Studio Pro - Auto-BPM, Live Pitch/Tempo, Pose AI & MP4</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Outfit:wght@700;800;900&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    <!-- MediaPipe Pose -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'sans-serif'], display: ['Outfit', 'sans-serif'] },
+                    colors: {
+                        energy: { orange: '#FF5500', lime: '#CCFF00', pink: '#FF0055', cyan: '#00F0FF', dark: '#08090C' }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body { background-color: #08090C; color: #F8FAFC; overflow-x: hidden; }
+        .glass { background: rgba(18, 20, 28, 0.88); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.09); }
+        .hud-pill { background: rgba(8, 9, 12, 0.82); backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.14); }
+        input[type=range] { -webkit-appearance: none; background: transparent; }
+        input[type=range]::-webkit-slider-runnable-track { height: 6px; border-radius: 999px; background: #232733; }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none; height: 18px; width: 18px; border-radius: 50%;
+            background: #CCFF00; cursor: pointer; margin-top: -6px; box-shadow: 0 0 10px #CCFF00;
+        }
+        @keyframes heartbeat { 0%, 100% { transform: scale(1); } 25% { transform: scale(1.22); } 50% { transform: scale(0.95); } }
+        .heart-beat { animation: heartbeat 0.8s infinite; }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col justify-between select-none">
+
+    <!-- HEADER SUPERIOR -->
+    <header class="glass sticky top-0 z-30 px-4 lg:px-8 py-3 border-b border-white/10">
+        <div class="max-w-[1600px] mx-auto flex flex-wrap items-center justify-between gap-3">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-2xl bg-gradient-to-tr from-energy-orange to-energy-pink flex items-center justify-center shadow-lg">
+                    <i class="ph-fill ph-fire text-xl text-white"></i>
+                </div>
+                <div>
+                    <div class="flex items-center gap-2">
+                        <span class="font-display font-black text-xl tracking-tight text-white">PULSE<span class="text-energy-lime">BURN</span></span>
+                        <span id="sessionBadge" class="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-slate-800 text-slate-300">LISTO</span>
+                    </div>
+                    <p class="text-[11px] text-slate-400 hidden sm:block">Auto-BPM Detector, Pitch/Tempo en Vivo, Pose AI, MP4 y Apple Watch</p>
+                </div>
+            </div>
+
+            <!-- KPIs Centrales -->
+            <div class="flex items-center gap-3 sm:gap-6 bg-slate-950/90 px-4 py-2 rounded-2xl border border-white/10">
+                <div>
+                    <div class="text-[10px] uppercase font-bold text-slate-400">Calorías</div>
+                    <div class="flex items-baseline gap-1">
+                        <span id="calVal" class="font-display font-black text-xl sm:text-2xl text-white tabular-nums">0.0</span>
+                        <span class="text-[10px] font-bold text-energy-orange">KCAL</span>
+                    </div>
+                </div>
+                <div class="border-l border-slate-800 pl-3 sm:pl-5">
+                    <div class="text-[10px] uppercase font-bold text-slate-400">Tiempo Activo</div>
+                    <span id="timeVal" class="font-display font-black text-xl sm:text-2xl text-energy-lime tabular-nums">00:00:00</span>
+                </div>
+                <div class="border-l border-slate-800 pl-3 sm:pl-5">
+                    <div class="text-[10px] uppercase font-bold text-slate-400 flex items-center gap-1">
+                        <span>BPM En Vivo</span>
+                        <span id="tempoSpeedTag" class="text-[9px] px-1.5 rounded bg-energy-cyan/20 text-energy-cyan font-mono">1.00x</span>
+                    </div>
+                    <span id="bpmVal" class="font-display font-black text-xl sm:text-2xl text-energy-cyan tabular-nums">128 BPM</span>
+                </div>
+                <div class="border-l border-slate-800 pl-3 sm:pl-5">
+                    <div class="text-[10px] uppercase font-bold text-slate-400 flex items-center gap-1">
+                        <span>Pulso</span>
+                        <span id="hrSourceTag" class="text-[9px] px-1.5 rounded bg-rose-500/20 text-rose-300">Est.</span>
+                    </div>
+                    <div class="flex items-baseline gap-1">
+                        <i class="ph-fill ph-heart text-energy-pink heart-beat text-sm"></i>
+                        <span id="hrVal" class="font-display font-black text-xl sm:text-2xl text-white tabular-nums">78</span>
+                        <span class="text-[10px] font-bold text-energy-pink">LPM</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Botones Rápidos -->
+            <div class="flex items-center gap-2">
+                <button id="openWatchModalBtn" class="px-3.5 py-2.5 rounded-xl bg-gradient-to-r from-rose-600 to-pink-600 hover:from-rose-500 hover:to-pink-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-lg transition">
+                    <i class="ph-fill ph-watch text-base"></i>
+                    <span class="hidden md:inline">Apple Watch</span>
+                    <span id="watchDot" class="w-2 h-2 rounded-full bg-white/40"></span>
+                </button>
+                <button id="mainStartBtn" class="px-4 py-2.5 rounded-xl bg-energy-lime text-slate-950 font-display font-black text-xs sm:text-sm flex items-center gap-1.5 hover:brightness-110 transition">
+                    <i id="mainStartIcon" class="ph-fill ph-play"></i>
+                    <span id="mainStartText">INICIAR</span>
+                </button>
+                <button id="resetBtn" title="Reiniciar sesión" class="p-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 transition">
+                    <i class="ph-bold ph-arrow-counter-clockwise"></i>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- WORKSPACE PRINCIPAL -->
+    <main class="flex-1 max-w-[1600px] w-full mx-auto px-4 lg:px-8 py-4 grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
+
+        <!-- Escenario de Cámara, Esqueleto IA y Grabación MP4 (8 cols) -->
+        <div class="lg:col-span-8 flex flex-col gap-3">
+            <div class="relative flex-1 min-h-[380px] lg:min-h-[450px] rounded-3xl overflow-hidden bg-slate-950 border border-white/10 shadow-2xl flex items-center justify-center">
+                <video id="camVideo" autoplay playsinline muted class="hidden"></video>
+                <canvas id="stageCanvas" width="1280" height="720" class="w-full h-full object-cover"></canvas>
+
+                <!-- Estado Inicial de Cámara -->
+                <div id="camEmptyState" class="absolute inset-0 flex flex-col items-center justify-center bg-slate-950/90 p-6 text-center z-10">
+                    <div class="w-16 h-16 rounded-2xl bg-energy-orange/20 border border-energy-orange/40 flex items-center justify-center text-energy-orange mb-3">
+                        <i class="ph-duotone ph-video-camera text-3xl"></i>
+                    </div>
+                    <h2 class="font-display font-extrabold text-xl text-white">Escenario Biomecánico IA & Grabación MP4</h2>
+                    <p class="text-xs text-slate-400 max-w-md mt-1 mb-5">
+                        Activa tu cámara para rastrear tu esqueleto en vivo, sincronizar tus calorías con el BPM de la música y grabar tu sesión en <strong class="text-energy-lime">MP4</strong>.
+                    </p>
+                    <button id="activateCamBtn" class="px-6 py-3 rounded-2xl bg-gradient-to-r from-energy-orange to-energy-pink text-white font-black text-xs sm:text-sm flex items-center gap-2 shadow-lg hover:brightness-110 transition">
+                        <i class="ph-bold ph-camera text-lg"></i> ENCENDER CÁMARA Y POSE IA
+                    </button>
+                </div>
+
+                <!-- Píldoras Flotantes Superiores -->
+                <div class="absolute top-4 left-4 right-4 flex flex-wrap items-center justify-between gap-2 pointer-events-none z-20">
+                    <div class="flex items-center gap-2">
+                        <div id="recBadge" class="hidden px-3.5 py-1.5 rounded-full bg-red-600 text-white text-xs font-black flex items-center gap-2 shadow-lg">
+                            <span class="w-2.5 h-2.5 rounded-full bg-white animate-ping"></span>
+                            <span>REC MP4</span>
+                            <span id="recTimerText" class="tabular-nums">00:00</span>
+                        </div>
+                        <div class="hud-pill px-3.5 py-1.5 rounded-full flex items-center gap-2 text-xs font-bold text-energy-lime">
+                            <i class="ph-fill ph-person-simple-run"></i>
+                            <span id="poseStatusText">Cámara en espera</span>
+                        </div>
+                    </div>
+                    <div class="hud-pill px-3.5 py-1.5 rounded-full text-xs font-bold text-white">
+                        Rodilla: <span id="kneeAngleVal" class="text-energy-cyan">--°</span> • Quema: <span id="kcalRateVal" class="text-energy-orange">0.0 kcal/min</span>
+                    </div>
+                </div>
+
+                <!-- Barra Flotante Inferior de Cámara y MP4 -->
+                <div class="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 hud-pill px-3 py-2 rounded-2xl flex flex-wrap items-center justify-center gap-2 w-[95%] sm:w-auto shadow-2xl">
+                    <button id="camPowerBtn" class="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold text-white flex items-center gap-1.5 transition">
+                        <i class="ph-bold ph-power text-energy-lime"></i>
+                        <span id="camPowerText">Encender</span>
+                    </button>
+                    <button id="mirrorBtn" class="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200 flex items-center gap-1 transition">
+                        <i class="ph-bold ph-arrows-left-right"></i> Espejo
+                    </button>
+                    <button id="flipCamBtn" class="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200 flex items-center gap-1 transition">
+                        <i class="ph-bold ph-camera-rotate"></i> Girar
+                    </button>
+                    <label class="px-2.5 py-2 rounded-xl bg-slate-800 text-xs font-bold text-energy-cyan flex items-center gap-1.5 cursor-pointer">
+                        <input type="checkbox" id="skeletonToggle" checked class="accent-energy-cyan">
+                        <span>Esqueleto</span>
+                    </label>
+                    <label class="px-2.5 py-2 rounded-xl bg-slate-800 text-xs font-bold text-energy-lime flex items-center gap-1.5 cursor-pointer">
+                        <input type="checkbox" id="hudToggle" checked class="accent-energy-lime">
+                        <span>HUD en MP4</span>
+                    </label>
+                    <button id="startRecBtn" disabled class="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 disabled:opacity-40 text-xs font-black text-white flex items-center gap-1.5 shadow-lg transition">
+                        <i class="ph-fill ph-record text-base"></i>
+                        <span>Grabar Video (MP4)</span>
+                    </button>
+                    <button id="stopRecBtn" class="hidden px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-black flex items-center gap-1.5 shadow-lg transition">
+                        <i class="ph-fill ph-stop-circle text-base"></i>
+                        <span>Detener MP4</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Banner de Descarga MP4 -->
+            <div id="mp4ReadyBanner" class="hidden glass p-3.5 rounded-2xl border border-energy-lime/50 flex flex-col sm:flex-row items-center justify-between gap-3">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-energy-lime/20 border border-energy-lime/40 flex items-center justify-center text-energy-lime">
+                        <i class="ph-fill ph-film-strip text-xl"></i>
+                    </div>
+                    <div>
+                        <h4 class="font-display font-bold text-xs sm:text-sm text-white">¡Video MP4 procesado con éxito!</h4>
+                        <p id="mp4MetaText" class="text-[11px] text-slate-400">Listo para guardar o previsualizar</p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-2 w-full sm:w-auto">
+                    <button id="previewMp4Btn" class="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold text-white flex items-center gap-1.5">
+                        <i class="ph-fill ph-play-circle text-energy-cyan"></i> Ver Clip
+                    </button>
+                    <a id="downloadMp4Btn" href="#" download="PulseBurn_Session.mp4" class="flex-1 sm:flex-initial px-4 py-2 rounded-xl bg-energy-lime text-slate-950 font-display font-black text-xs flex items-center justify-center gap-1.5">
+                        <i class="ph-bold ph-download-simple"></i> Guardar MP4
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Panel Derecho por Pestañas (4 cols): Control de BPM en Tiempo Real, Biometría y Apple Watch -->
+        <div class="lg:col-span-4 glass rounded-3xl p-5 flex flex-col justify-between">
+            <div>
+                <!-- Navegación por Pestañas -->
+                <div class="grid grid-cols-3 gap-1.5 bg-slate-950 p-1.5 rounded-2xl border border-slate-800 mb-4">
+                    <button data-tab="tab-rhythm" class="tab-btn py-2 rounded-xl text-xs font-extrabold bg-energy-lime text-slate-950 flex items-center justify-center gap-1 transition">
+                        <i class="ph-fill ph-waveform"></i> BPM & DJ
+                    </button>
+                    <button data-tab="tab-bio" class="tab-btn py-2 rounded-xl text-xs font-bold text-slate-400 hover:text-white flex items-center justify-center gap-1 transition">
+                        <i class="ph-fill ph-user"></i> Biometría
+                    </button>
+                    <button data-tab="tab-watch" class="tab-btn py-2 rounded-xl text-xs font-bold text-slate-400 hover:text-white flex items-center justify-center gap-1 transition">
+                        <i class="ph-fill ph-watch"></i> Watch/Salud
+                    </button>
+                </div>
+
+                <!-- PESTAÑA 1: DETECTOR AUTO-BPM Y CONTROL DE TEMPO MUSICAL EN TIEMPO REAL -->
+                <div id="tab-rhythm" class="tab-content space-y-3.5">
+                    <!-- Tarjeta de Control de Tempo en Vivo -->
+                    <div class="p-4 rounded-2xl bg-slate-900/95 border border-energy-cyan/30 space-y-3">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <span class="text-[11px] font-extrabold uppercase text-energy-cyan block">Pitch / Tempo en Tiempo Real</span>
+                                <span id="detectedOriginalBpmLabel" class="text-[11px] text-slate-400">BPM Original de Pista: <strong class="text-white">128 BPM</strong></span>
+                            </div>
+                            <button id="resetOriginalBpmBtn" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-[10px] font-bold text-energy-lime border border-energy-lime/30 transition" title="Volver al BPM nativo detectado de la canción">
+                                1.00x Original
+                            </button>
+                        </div>
+
+                        <!-- Botones +/- 1 BPM y Slider en Vivo -->
+                        <div class="flex items-center gap-2">
+                            <button id="bpmMinusBtn" class="w-9 h-9 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-black text-sm flex items-center justify-center active:scale-90 transition">-1</button>
+                            <input type="range" id="bpmRange" min="60" max="200" step="1" value="128" class="flex-1">
+                            <button id="bpmPlusBtn" class="w-9 h-9 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-black text-sm flex items-center justify-center active:scale-90 transition">+1</button>
+                            <input type="number" id="bpmInputNum" min="60" max="200" value="128" class="w-16 bg-slate-950 border border-slate-700 rounded-xl py-1.5 text-center font-display font-black text-sm text-energy-cyan">
+                        </div>
+
+                        <!-- Master Tempo (Preservar Tono Vocal) -->
+                        <div class="flex items-center justify-between pt-1 border-t border-slate-800/80 text-xs">
+                            <label class="flex items-center gap-2 cursor-pointer text-slate-300 font-medium">
+                                <input type="checkbox" id="preservePitchToggle" checked class="accent-energy-cyan">
+                                <span>Master Tempo (Mantener tono de voz natural)</span>
+                            </label>
+                            <span id="playbackRateLabel" class="font-mono font-bold text-energy-lime">100%</span>
+                        </div>
+
+                        <!-- Presets de Ritmo que alteran la música al instante -->
+                        <div class="grid grid-cols-4 gap-1.5 pt-1">
+                            <button data-bpm="95" class="preset-bpm py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-[11px] font-bold text-slate-300">95 Warm</button>
+                            <button data-bpm="128" class="preset-bpm py-1.5 rounded-lg bg-energy-cyan/20 border border-energy-cyan/40 text-[11px] font-bold text-energy-cyan">128 Fit</button>
+                            <button data-bpm="142" class="preset-bpm py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-[11px] font-bold text-slate-300">142 Afro</button>
+                            <button data-bpm="170" class="preset-bpm py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-[11px] font-bold text-slate-300">170 HIIT</button>
+                        </div>
+                    </div>
+
+                    <!-- Modalidad y Tiempo Rápido -->
+                    <div class="p-3.5 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-2.5">
+                        <label class="text-[11px] font-bold text-slate-400 block">MODALIDAD DE ENTRENAMIENTO</label>
+                        <select id="modalitySelect" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs font-bold text-white">
+                            <option value="1.15">Zumba / Afrofit / Danza (1.15x)</option>
+                            <option value="1.30">HIIT + Kettlebell & Pesas (1.30x)</option>
+                            <option value="1.00">Coreografía Estándar (1.00x)</option>
+                            <option value="1.20">AeroBox / Cardio Kick (1.20x)</option>
+                        </select>
+                        <div class="flex items-center justify-between pt-1">
+                            <span class="text-xs text-slate-400">Simular tiempo activo:</span>
+                            <div class="flex gap-1.5">
+                                <button data-min="5" class="add-min-btn px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-bold text-white">+5m</button>
+                                <button data-min="15" class="add-min-btn px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-bold text-energy-lime">+15m</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Energía Cinética del Esqueleto -->
+                    <div class="p-3.5 rounded-2xl bg-slate-950 border border-slate-800 space-y-1.5">
+                        <div class="flex justify-between text-[11px] font-bold">
+                            <span class="text-slate-400">ENERGÍA CINÉTICA DE ARTICULACIONES</span>
+                            <span id="kineticPctLabel" class="text-energy-lime">0%</span>
+                        </div>
+                        <div class="w-full h-2 bg-slate-900 rounded-full overflow-hidden">
+                            <div id="kineticBar" class="h-full bg-gradient-to-r from-energy-cyan to-energy-lime w-0 transition-all duration-150"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- PESTAÑA 2: BIOMETRÍA -->
+                <div id="tab-bio" class="tab-content hidden space-y-4">
+                    <div class="p-4 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-2">
+                        <div class="flex justify-between text-xs font-bold">
+                            <span class="text-slate-400">PESO CORPORAL (KG)</span>
+                            <span id="weightLabel" class="text-energy-orange">70.0 kg</span>
+                        </div>
+                        <input type="range" id="weightRange" min="40" max="150" step="0.5" value="70" class="w-full">
+                    </div>
+
+                    <div class="p-4 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-2">
+                        <div class="flex justify-between text-xs font-bold">
+                            <span class="text-slate-400">ESTATURA / TALLA (CM)</span>
+                            <span id="heightLabel" class="text-energy-lime">170 cm</span>
+                        </div>
+                        <input type="range" id="heightRange" min="130" max="210" step="1" value="170" class="w-full">
+                    </div>
+
+                    <div class="p-4 rounded-2xl bg-slate-950 border border-slate-800 grid grid-cols-2 gap-3 text-center">
+                        <div>
+                            <div class="text-[10px] font-bold text-slate-400">IMC ACTUAL</div>
+                            <div id="bmiVal" class="font-display font-black text-xl text-white mt-0.5">24.2</div>
+                        </div>
+                        <div>
+                            <div class="text-[10px] font-bold text-slate-400">SUPERFICIE (BSA)</div>
+                            <div id="bsaVal" class="font-display font-black text-xl text-energy-cyan mt-0.5">1.81 m²</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- PESTAÑA 3: APPLE WATCH Y APP SALUD -->
+                <div id="tab-watch" class="tab-content hidden space-y-3.5">
+                    <div class="p-3.5 rounded-2xl bg-slate-950 border border-rose-500/30 flex items-center gap-4">
+                        <div class="relative w-20 h-20 flex items-center justify-center shrink-0">
+                            <svg class="w-20 h-20 -rotate-90" viewBox="0 0 100 100">
+                                <circle cx="50" cy="50" r="42" stroke="#33101e" stroke-width="8" fill="none" />
+                                <circle cx="50" cy="50" r="31" stroke="#222e10" stroke-width="8" fill="none" />
+                                <circle cx="50" cy="50" r="20" stroke="#0d2b33" stroke-width="8" fill="none" />
+                                <circle id="ringMove" cx="50" cy="50" r="42" stroke="#FA114F" stroke-width="8" stroke-linecap="round" fill="none" stroke-dasharray="264" stroke-dashoffset="264" class="transition-all duration-500" />
+                                <circle id="ringExercise" cx="50" cy="50" r="31" stroke="#A4FF00" stroke-width="8" stroke-linecap="round" fill="none" stroke-dasharray="195" stroke-dashoffset="195" class="transition-all duration-500" />
+                                <circle id="ringStand" cx="50" cy="50" r="20" stroke="#00F5EA" stroke-width="8" stroke-linecap="round" fill="none" stroke-dasharray="125" stroke-dashoffset="45" class="transition-all duration-500" />
+                            </svg>
+                            <i class="ph-fill ph-watch text-lg text-white absolute"></i>
+                        </div>
+                        <div class="flex-1 space-y-1 text-xs">
+                            <div class="flex justify-between">
+                                <span class="text-rose-400 font-bold">Movimiento</span>
+                                <span id="ringMoveText" class="font-mono font-bold text-white">0/300 KCAL</span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span class="text-energy-lime font-bold">Ejercicio</span>
+                                <span id="ringExText" class="font-mono font-bold text-white">0/30 MIN</span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span class="text-cyan-400 font-bold">Pulso Watch</span>
+                                <span id="ringHrText" class="font-mono font-bold text-white">78 LPM</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <button id="connectBleBtn" class="w-full py-2.5 px-3 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-extrabold text-xs flex items-center justify-center gap-2 transition">
+                        <i class="ph-bold ph-bluetooth text-base"></i> Conectar Apple Watch vía Bluetooth (BLE)
+                    </button>
+
+                    <button id="syncHealthKitBtn" class="w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-rose-600 to-pink-600 text-white font-extrabold text-xs flex items-center justify-center gap-2 transition">
+                        <i class="ph-fill ph-arrows-clockwise text-base"></i> <span id="syncHealthKitText">Sincronizar en Vivo con App Salud</span>
+                    </button>
+
+                    <button id="exportHealthJsonBtn" class="w-full py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs flex items-center justify-center gap-1.5 border border-slate-700 transition">
+                        <i class="ph-bold ph-export text-rose-400"></i> Exportar a Apple Salud (.JSON)
+                    </button>
+                    <p id="healthSyncLog" class="text-[11px] text-slate-400 text-center">Esperando conexión con Apple Watch...</p>
+                </div>
+            </div>
+
+            <!-- Barra de Meta de Sesión -->
+            <div class="pt-3 border-t border-white/10 mt-3">
+                <div class="flex justify-between text-xs mb-1">
+                    <span class="font-bold text-slate-400">Meta de Sesión: <strong class="text-white">300 kcal</strong></span>
+                    <span id="goalPctLabel" class="font-extrabold text-energy-lime">0%</span>
+                </div>
+                <div class="w-full h-2.5 bg-slate-900 rounded-full overflow-hidden">
+                    <div id="goalBar" class="h-full bg-gradient-to-r from-energy-orange via-energy-pink to-energy-lime w-0 transition-all duration-300"></div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- DOCK INFERIOR MUSICAL CON DETECTOR AUTO-BPM Y SINTETIZADOR -->
+    <footer class="glass border-t border-white/10 px-4 lg:px-8 py-3 z-30">
+        <div class="max-w-[1600px] mx-auto flex flex-wrap items-center justify-between gap-3">
+            <div class="flex flex-wrap items-center gap-2.5">
+                <label class="cursor-pointer px-4 py-2 rounded-xl bg-energy-cyan text-slate-950 font-extrabold text-xs flex items-center gap-1.5 hover:brightness-110 transition shadow-lg shadow-energy-cyan/20">
+                    <i class="ph-bold ph-upload-simple text-sm"></i> Cargar Pista MP3 / WAV
+                    <input type="file" id="mp3Input" accept="audio/*" class="hidden">
+                </label>
+
+                <button id="playMp3Btn" class="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs flex items-center gap-1.5 transition">
+                    <i id="playMp3Icon" class="ph-fill ph-play"></i>
+                    <span id="trackTitle" class="max-w-[200px] truncate">Ninguna pista cargada</span>
+                </button>
+
+                <!-- Estado del Analizador Automático de BPM -->
+                <span id="bpmAnalyzerStatus" class="text-xs font-extrabold px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-700 text-energy-lime">
+                    Auto-BPM: Esperando archivo...
+                </span>
+
+                <audio id="audioEl" class="hidden" crossorigin="anonymous"></audio>
+            </div>
+
+            <!-- Barra de Progreso del MP3 -->
+            <div class="flex items-center gap-2 flex-1 max-w-md">
+                <span id="curTimeAudio" class="text-[11px] font-mono text-slate-400">00:00</span>
+                <input type="range" id="seekAudio" min="0" max="100" value="0" class="flex-1">
+                <span id="durTimeAudio" class="text-[11px] font-mono text-slate-400">00:00</span>
+            </div>
+
+            <div class="flex items-center gap-2">
+                <button id="synthBeatBtn" class="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-200 border border-slate-700 transition">
+                    <i class="ph-fill ph-metronome text-energy-lime"></i> <span id="synthBeatText">Beat Demo: OFF</span>
+                </button>
+                <button id="tapBpmBtn" class="px-4 py-2 rounded-xl bg-purple-600/30 hover:bg-purple-600/50 border border-purple-500/40 text-purple-200 font-extrabold text-xs active:scale-90 transition">
+                    TAP BPM
+                </button>
+            </div>
+        </div>
+    </footer>
+
+    <!-- MODAL APPLE WATCH -->
+    <div id="watchModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/80 backdrop-blur-md p-4">
+        <div class="glass max-w-md w-full rounded-3xl p-6 border border-rose-500/40 space-y-4 relative">
+            <button id="closeWatchModalBtn" class="absolute top-4 right-4 w-8 h-8 rounded-full bg-slate-800 text-slate-300 flex items-center justify-center">
+                <i class="ph-bold ph-x"></i>
+            </button>
+            <h3 class="font-display font-black text-lg text-white">Vinculación con Apple Watch & Salud</h3>
+            <button id="modalBleConnectBtn" class="w-full py-3 rounded-xl bg-cyan-500 text-slate-950 font-black text-xs flex items-center justify-center gap-2">
+                <i class="ph-bold ph-bluetooth"></i> Conectar vía Bluetooth BLE (0x180D)
+            </button>
+            <button id="modalHealthBridgeBtn" class="w-full py-3 rounded-xl bg-gradient-to-r from-rose-600 to-pink-600 text-white font-black text-xs flex items-center justify-center gap-2">
+                <i class="ph-fill ph-heart"></i> Activar Puente Directo con App Salud
+            </button>
+        </div>
+    </div>
+
+    <!-- MODAL PREVISUALIZACIÓN MP4 -->
+    <div id="previewModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/85 backdrop-blur-md p-4">
+        <div class="glass max-w-2xl w-full rounded-3xl p-5 border border-white/15 space-y-3">
+            <div class="flex justify-between items-center">
+                <h3 class="font-display font-bold text-base text-white">Previsualización del Video MP4</h3>
+                <button id="closePreviewModalBtn" class="w-8 h-8 rounded-full bg-slate-800 text-slate-300 flex items-center justify-center">
+                    <i class="ph-bold ph-x"></i>
+                </button>
+            </div>
+            <video id="previewVideoEl" controls class="w-full rounded-2xl bg-black max-h-[65vh]"></video>
+        </div>
+    </div>
+
+    <script>
+        const state = {
+            weight: 70, height: 170,
+            originalTrackBpm: 128, // BPM nativo detectado del MP3
+            bpm: 128,              // BPM objetivo actual (modificable en tiempo real)
+            playbackRate: 1.0,     // Factor de velocidad de audio en tiempo real
+            mod: 1.15,
+            running: false, sec: 0, kcal: 0, goal: 300, hr: 78,
+            watchConnected: false, watchMode: 'none',
+            camOn: false, mirror: true, facing: 'user',
+            poseEnergy: 0, kneeAngle: 180, prevLm: null,
+            recording: false, recSec: 0, synthOn: false, taps: []
+        };
+
+        const $ = id => document.getElementById(id);
+        const canvas = $('stageCanvas');
+        const ctx = canvas.getContext('2d');
+        const audioEl = $('audioEl');
+
+        // Navegación de Pestañas
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.tab-btn').forEach(b => {
+                    b.className = 'tab-btn py-2 rounded-xl text-xs font-bold text-slate-400 hover:text-white flex items-center justify-center gap-1 transition';
+                });
+                btn.className = 'tab-btn py-2 rounded-xl text-xs font-extrabold bg-energy-lime text-slate-950 flex items-center justify-center gap-1 transition';
+                document.querySelectorAll('.tab-content').forEach(c => c.classList.add('hidden'));
+                $(btn.dataset.tab).classList.remove('hidden');
+            });
+        });
+
+        /********************************************************************
+         * 1. DETECTOR AUTOMÁTICO DE BPM (FILTRO PASO BAJO + INTERVALOS DE PICOS)
+         ********************************************************************/
+        async function analyzeAndDetectBpmFromFile(file) {
+            $('bpmAnalyzerStatus').textContent = '⏳ Analizando ondas del MP3...';
+            $('bpmAnalyzerStatus').className = 'text-xs font-extrabold px-3 py-1.5 rounded-xl bg-amber-500/20 border border-amber-500/40 text-amber-300 animate-pulse';
+
+            try {
+                const arrayBuffer = await file.arrayBuffer();
+                const tempAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                const audioBuffer = await tempAudioCtx.decodeAudioData(arrayBuffer);
+
+                // Usamos OfflineAudioContext con un filtro Low-Pass a 145 Hz para aislar el bombo/cajón/bajo
+                const sampleRate = audioBuffer.sampleRate;
+                const analyzeSeconds = Math.min(30, audioBuffer.duration);
+                const startOffset = audioBuffer.duration > 35 ? 10 : 0; // Evitar intros silenciosos
+                const frameCount = Math.floor(analyzeSeconds * sampleRate);
+
+                const offlineCtx = new OfflineAudioContext(1, frameCount, sampleRate);
+                const bufferSource = offlineCtx.createBufferSource();
+                bufferSource.buffer = audioBuffer;
+
+                const lowPass = offlineCtx.createBiquadFilter();
+                lowPass.type = 'lowpass';
+                lowPass.frequency.setValueAtTime(145, 0);
+                lowPass.Q.setValueAtTime(1.0, 0);
+
+                bufferSource.connect(lowPass);
+                lowPass.connect(offlineCtx.destination);
+                bufferSource.start(0, startOffset, analyzeSeconds);
+
+                const renderedBuffer = await offlineCtx.startRendering();
+                const channelData = renderedBuffer.getChannelData(0);
+
+                // Dividir en ventanas de energía de 20ms y detectar picos de percusión
+                const windowSize = Math.floor(sampleRate * 0.02);
+                const energies = [];
+                for (let i = 0; i < channelData.length; i += windowSize) {
+                    let sum = 0;
+                    for (let j = 0; j < windowSize && (i + j) < channelData.length; j++) {
+                        sum += channelData[i + j] * channelData[i + j];
+                    }
+                    energies.push(Math.sqrt(sum / windowSize));
+                }
+
+                // Umbral dinámico sobre la energía media
+                const sorted = [...energies].sort((a, b) => b - a);
+                const topThreshold = sorted[Math.floor(sorted.length * 0.14)] || 0.05;
+                const peakTimes = [];
+                let minPeakDistance = 14; // Mínimo 280ms entre golpes (~214 BPM máx)
+
+                for (let i = 1; i < energies.length - 1; i++) {
+                    if (energies[i] > topThreshold && energies[i] > energies[i - 1] && energies[i] >= energies[i + 1]) {
+                        if (peakTimes.length === 0 || (i - peakTimes[peakTimes.length - 1]) >= minPeakDistance) {
+                            peakTimes.push(i);
+                        }
+                    }
+                }
+
+                // Agrupar intervalos entre golpes vecinos en un histograma de BPMs candidatos
+                const bpmCounts = {};
+                for (let i = 0; i < peakTimes.length; i++) {
+                    for (let j = 1; j <= 6 && (i + j) < peakTimes.length; j++) {
+                        const intervalSec = ((peakTimes[i + j] - peakTimes[i]) * windowSize) / sampleRate;
+                        if (intervalSec <= 0) continue;
+                        let candidateBpm = (60 / intervalSec) * j;
+                        while (candidateBpm < 80) candidateBpm *= 2;
+                        while (candidateBpm > 180) candidateBpm /= 2;
+                        const rounded = Math.round(candidateBpm);
+                        bpmCounts[rounded] = (bpmCounts[rounded] || 0) + 1;
+                    }
+                }
+
+                // Elegir el BPM con mayor coincidencia armónica
+                let bestBpm = 128;
+                let maxScore = 0;
+                for (const [bpmStr, count] of Object.entries(bpmCounts)) {
+                    const b = Number(bpmStr);
+                    const score = count + (bpmCounts[b - 1] || 0) * 0.5 + (bpmCounts[b + 1] || 0) * 0.5;
+                    if (score > maxScore) {
+                        maxScore = score;
+                        bestBpm = b;
+                    }
+                }
+
+                await tempAudioCtx.close();
+
+                // Asignar el BPM Original detectado y sincronizar toda la app
+                state.originalTrackBpm = bestBpm;
+                $('detectedOriginalBpmLabel').innerHTML = `BPM Original Detectado: <strong class="text-energy-lime">${bestBpm} BPM</strong>`;
+                $('bpmAnalyzerStatus').textContent = `✓ Auto-BPM Detectado: ${bestBpm} BPM`;
+                $('bpmAnalyzerStatus').className = 'text-xs font-extrabold px-3 py-1.5 rounded-xl bg-energy-lime/20 border border-energy-lime/50 text-energy-lime';
+
+                applyLiveBpmChange(bestBpm);
+            } catch (err) {
+                console.warn('Error analizando BPM:', err);
+                $('bpmAnalyzerStatus').textContent = 'Auto-BPM: 128 BPM (Ajustable)';
+            }
+        }
+
+        /********************************************************************
+         * 2. MODIFICADOR DE BPM Y VELOCIDAD DE LA MÚSICA EN TIEMPO REAL
+         ********************************************************************/
+        function applyLiveBpmChange(newBpm) {
+            const clamped = Math.max(60, Math.min(200, Math.round(newBpm)));
+            state.bpm = clamped;
+            $('bpmRange').value = clamped;
+            $('bpmInputNum').value = clamped;
+
+            // Calcular ratio en tiempo real respecto al BPM nativo de la pista
+            const baseBpm = state.originalTrackBpm > 0 ? state.originalTrackBpm : 128;
+            const rate = Math.max(0.5, Math.min(2.0, clamped / baseBpm));
+            state.playbackRate = rate;
+
+            // Aplicar inmediatamente al reproductor MP3 activo
+            const preserve = $('preservePitchToggle').checked;
+            if ('preservesPitch' in audioEl) audioEl.preservesPitch = preserve;
+            if ('mozPreservesPitch' in audioEl) audioEl.mozPreservesPitch = preserve;
+            if ('webkitPreservesPitch' in audioEl) audioEl.webkitPreservesPitch = preserve;
+            audioEl.playbackRate = rate;
+
+            // Si el Beat Demo está encendido, actualizar su metrónomo en tiempo real
+            if (state.synthOn) restartSynthBeat();
+
+            const pct = Math.round(rate * 100);
+            $('playbackRateLabel').textContent = `${pct}% (${rate.toFixed(2)}x)`;
+            $('tempoSpeedTag').textContent = `${rate.toFixed(2)}x`;
+
+            updateUI();
+        }
+
+        // Eventos para modificar el BPM de la música en tiempo real
+        $('bpmRange').addEventListener('input', e => applyLiveBpmChange(Number(e.target.value)));$('bpmInputNum').addEventListener('input', e => {
+            const v = Number(e.target.value);
+            if (v >= 60 && v <= 200) applyLiveBpmChange(v);
+        });
+        $('bpmMinusBtn').addEventListener('click', () => applyLiveBpmChange(state.bpm - 1));$('bpmPlusBtn').addEventListener('click', () => applyLiveBpmChange(state.bpm + 1));
+        $('resetOriginalBpmBtn').addEventListener('click', () => applyLiveBpmChange(state.originalTrackBpm));$('preservePitchToggle').addEventListener('change', () => applyLiveBpmChange(state.bpm));
+
+        document.querySelectorAll('.preset-bpm').forEach(btn => {
+            btn.addEventListener('click', () => applyLiveBpmChange(Number(btn.dataset.bpm)));
+        });
+
+        // Evento de Carga de Pista MP3
+        $('mp3Input').addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const url = URL.createObjectURL(file);
+            audioEl.src = url;
+            $('trackTitle').textContent = file.name;
+
+            // 1. Detectar el BPM real del archivo de manera automática
+            await analyzeAndDetectBpmFromFile(file);
+
+            // 2. Reproducir pista al BPM detectado e iniciar sesión
+            audioEl.play().then(() => {
+                $('playMp3Icon').className = 'ph-fill ph-pause';
+                applyLiveBpmChange(state.bpm);
+                if (!state.running) toggleWorkout();
+            }).catch(() => {});
+        });
+
+        $('playMp3Btn').addEventListener('click', () => {
+            if (!audioEl.src) return;
+            if (audioEl.paused) {
+                audioEl.play();
+                $('playMp3Icon').className = 'ph-fill ph-pause';
+            } else {
+                audioEl.pause();
+                $('playMp3Icon').className = 'ph-fill ph-play';
+            }
+        });
+
+        audioEl.addEventListener('timeupdate', () => {
+            const c = audioEl.currentTime || 0;
+            const d = audioEl.duration || 0;
+            const fmt = s => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+            $('curTimeAudio').textContent = fmt(c);
+            if (d > 0) {
+                $('durTimeAudio').textContent = fmt(d);$('seekAudio').value = (c / d) * 100;
+            }
+        });
+
+        $('seekAudio').addEventListener('input', e => {
+            if (audioEl.duration > 0) {
+                audioEl.currentTime = (Number(e.target.value) / 100) * audioEl.duration;
+            }
+        });
+
+        // TAP BPM que también altera la velocidad del MP3 en tiempo real
+        $('tapBpmBtn').addEventListener('click', () => {
+            const now = performance.now();
+            state.taps.push(now);
+            if (state.taps.length > 5) state.taps.shift();
+            if (state.taps.length > 1) {
+                const avgMs = (state.taps[state.taps.length - 1] - state.taps[0]) / (state.taps.length - 1);
+                applyLiveBpmChange(Math.round(60000 / avgMs));
+            }
+        });
+
+        // Sintetizador Beat Demo sincronizado al BPM actual
+        let aCtx = null, beatTimer = null;
+        function restartSynthBeat() {
+            if (beatTimer) clearInterval(beatTimer);
+            if (!state.synthOn) return;
+            if (!aCtx) aCtx = new (window.AudioContext || window.webkitAudioContext)();
+            beatTimer = setInterval(() => {
+                const o = aCtx.createOscillator(), g = aCtx.createGain();
+                o.frequency.setValueAtTime(135, aCtx.currentTime);
+                o.frequency.exponentialRampToValueAtTime(40, aCtx.currentTime + 0.12);
+                g.gain.setValueAtTime(0.4, aCtx.currentTime);
+                g.gain.exponentialRampToValueAtTime(0.001, aCtx.currentTime + 0.15);
+                o.connect(g); g.connect(aCtx.destination);
+                o.start(); o.stop(aCtx.currentTime + 0.16);
+            }, (60 / state.bpm) * 1000);
+        }
+
+        $('synthBeatBtn').addEventListener('click', () => {
+            state.synthOn = !state.synthOn;
+            $('synthBeatText').textContent = state.synthOn ? 'Beat Demo: ON' : 'Beat Demo: OFF';
+            restartSynthBeat();
+        });
+
+        /********************************************************************
+         * 3. CÁMARA, ESQUELETO IA Y GRABACIÓN MP4
+         ********************************************************************/
+        function calcAngle(a, b, c) {
+            if (!a || !b || !c) return 180;
+            const rad = Math.atan2(c.y - b.y, c.x - b.x) - Math.atan2(a.y - b.y, a.x - b.x);
+            let deg = Math.abs(rad * 180.0 / Math.PI);
+            return Math.round(deg > 180 ? 360 - deg : deg);
+        }
+
+        const pose = new Pose({ locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${f}` });
+        pose.setOptions({ modelComplexity: 1, smoothLandmarks: true, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+
+        pose.onResults(res => {
+            ctx.save();
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            if (state.mirror) { ctx.translate(canvas.width, 0); ctx.scale(-1, 1); }
+            ctx.drawImage(res.image, 0, 0, canvas.width, canvas.height);
+
+            if (res.poseLandmarks) {
+                const lm = res.poseLandmarks;
+                $('poseStatusText').textContent = 'Esqueleto IA Activo';
+                if (state.prevLm) {
+                    let d = 0;
+                    [15, 16, 27, 28].forEach(i => {
+                        d += Math.hypot(lm[i].x - state.prevLm[i].x, lm[i].y - state.prevLm[i].y);
+                    });
+                    state.poseEnergy = Math.min(100, Math.round(d * 450));
+                    $('kineticBar').style.width = `${state.poseEnergy}%`;
+                    $('kineticPctLabel').textContent = `${state.poseEnergy}%`;
+                }
+                state.prevLm = lm;
+                state.kneeAngle = calcAngle(lm[23], lm[25], lm[27]);
+                $('kneeAngleVal').textContent = `${state.kneeAngle}°`;
+
+                if ($('skeletonToggle').checked) {
+                    drawConnectors(ctx, lm, POSE_CONNECTIONS, { color: '#00F0FF', lineWidth: 4 });
+                    drawLandmarks(ctx, lm, { color: '#CCFF00', fillColor: '#FF0055', lineWidth: 2, radius: 5 });
+                }
+            }
+            ctx.restore();
+
+            if ($('hudToggle').checked) {
+                ctx.fillStyle = 'rgba(8, 9, 12, 0.82)';
+                ctx.fillRect(28, 615, 810, 76);
+                ctx.fillStyle = '#CCFF00';
+                ctx.font = '900 25px Outfit, sans-serif';
+                ctx.fillText(`🔥 ${state.kcal.toFixed(1)} KCAL | ⏱️ ${$('timeVal').textContent} | 🎵 ${state.bpm} BPM (${state.playbackRate.toFixed(2)}x) | ❤️ ${Math.round(state.hr)} LPM`, 46, 662);
+            }
+        });
+
+        let camStream = null;
+        async function startCamera() {
+            try {
+                if (camStream) camStream.getTracks().forEach(t => t.stop());
+                camStream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: state.facing, width: 1280, height: 720 },
+                    audio: true
+                });
+                $('camVideo').srcObject = camStream;
+                await $('camVideo').play();
+                state.camOn = true;
+                $('camEmptyState').classList.add('hidden');$('startRecBtn').disabled = false;
+                $('camPowerText').textContent = 'Apagar';
+                requestAnimationFrame(poseLoop);
+            } catch (err) {
+                alert('Permite el acceso a la cámara para activar Pose IA.');
+            }
+        }
+
+        async function poseLoop() {
+            if (state.camOn && $('camVideo').readyState >= 2) {
+                await pose.send({ image: $('camVideo') });
+            }
+            if (state.camOn) requestAnimationFrame(poseLoop);
+        }
+
+        $('activateCamBtn').addEventListener('click', startCamera);$('camPowerBtn').addEventListener('click', () => {
+            if (state.camOn) {
+                if (state.recording) stopMp4Recording();
+                camStream.getTracks().forEach(t => t.stop());
+                state.camOn = false;
+                $('camEmptyState').classList.remove('hidden');$('startRecBtn').disabled = true;
+                $('camPowerText').textContent = 'Encender';
+            } else startCamera();
+        });
+        $('mirrorBtn').addEventListener('click', () => state.mirror = !state.mirror);$('flipCamBtn').addEventListener('click', () => {
+            state.facing = state.facing === 'user' ? 'environment' : 'user';
+            if (state.camOn) startCamera();
+        });
+
+        // Grabación MP4
+        let mediaRecorder = null, recChunks = [], recInterval = null;
+        function startMp4Recording() {
+            if (!state.camOn) return;
+            recChunks = [];
+            const cStream = canvas.captureStream(30);
+            if (camStream && camStream.getAudioTracks().length > 0) {
+                cStream.addTrack(camStream.getAudioTracks()[0]);
+            }
+            const mime = ['video/mp4;codecs=avc1', 'video/mp4', 'video/webm;codecs=h264', 'video/webm']
+                .find(t => window.MediaRecorder && MediaRecorder.isTypeSupported(t)) || '';
+            mediaRecorder = mime ? new MediaRecorder(cStream, { mimeType: mime }) : new MediaRecorder(cStream);
+
+            mediaRecorder.ondataavailable = e => { if (e.data && e.data.size > 0) recChunks.push(e.data); };
+            mediaRecorder.onstop = () => {
+                const mp4Blob = new Blob(recChunks, { type: 'video/mp4' });
+                const url = URL.createObjectURL(mp4Blob);
+                const filename = `PulseBurn_${state.bpm}BPM_${Date.now()}.mp4`;
+                $('downloadMp4Btn').href = url;
+                $('downloadMp4Btn').download = filename;
+                $('previewVideoEl').src = url;
+                $('mp4MetaText').textContent = `Archivo: ${filename} (${(mp4Blob.size / 1048576).toFixed(2)} MB)`;
+                $('mp4ReadyBanner').classList.remove('hidden');
+            };
+
+            mediaRecorder.start(250);
+            state.recording = true; state.recSec = 0;
+            if (!state.running) toggleWorkout();
+            $('startRecBtn').classList.add('hidden');
+            $('stopRecBtn').classList.remove('hidden');$('recBadge').classList.remove('hidden');
+            recInterval = setInterval(() => {
+                state.recSec++;
+                $('recTimerText').textContent = `${String(Math.floor(state.recSec / 60)).padStart(2, '0')}:${String(state.recSec % 60).padStart(2, '0')}`;
+            }, 1000);
+        }
+
+        function stopMp4Recording() {
+            if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+            state.recording = false;
+            clearInterval(recInterval);
+            $('stopRecBtn').classList.add('hidden');
+            $('startRecBtn').classList.remove('hidden');$('recBadge').classList.add('hidden');
+        }
+
+        $('startRecBtn').addEventListener('click', startMp4Recording);$('stopRecBtn').addEventListener('click', stopMp4Recording);
+        $('previewMp4Btn').addEventListener('click', () => {$('previewModal').classList.remove('hidden'); $('previewModal').classList.add('flex');$('previewVideoEl').play(); });
+        $('closePreviewModalBtn').addEventListener('click', () => {$('previewVideoEl').pause(); $('previewModal').classList.add('hidden');$('previewModal').classList.remove('flex'); });
+
+        /********************************************************************
+         * 4. MOTOR BIOMÉTRICO Y APPLE WATCH
+         ********************************************************************/
+        function computeMetrics() {
+            const hm = state.height / 100;
+            const bmi = state.weight / (hm * hm);
+            const bsa = Math.sqrt((state.height * state.weight) / 3600);
+            const baseMet = state.bpm < 100 ? 3.6 : state.bpm < 140 ? 6.8 : 10.2;
+            const poseBonus = 1 + (state.poseEnergy / 240);
+            const kcalMin = (baseMet * state.mod * poseBonus * 3.5 * state.weight / 200) * (0.85 + 0.15 * (bsa / 1.73));
+            return { bmi: bmi.toFixed(1), bsa: bsa.toFixed(2), kcalMin };
+        }
+
+        function updateUI() {
+            const m = computeMetrics();
+            $('calVal').textContent = state.kcal.toFixed(1);$('bpmVal').textContent = `${state.bpm} BPM`;
+            $('hrVal').textContent = Math.round(state.hr);$('kcalRateVal').textContent = `${m.kcalMin.toFixed(1)} kcal/min`;
+            $('bmiVal').textContent = m.bmi;
+            $('bsaVal').textContent = `${m.bsa} m²`;
+
+            const pct = Math.min(100, Math.round((state.kcal / state.goal) * 100));
+            $('goalPctLabel').textContent = `${pct}%`;
+            $('goalBar').style.width = `${pct}%`;
+
+            $('ringMove').style.strokeDashoffset = 264 - (264 * Math.min(1, state.kcal / state.goal));
+            const exMin = Math.floor(state.sec / 60);
+            $('ringExercise').style.strokeDashoffset = 195 - (195 * Math.min(1, exMin / 30));$('ringMoveText').textContent = `${Math.round(state.kcal)}/${state.goal} KCAL`;
+            $('ringExText').textContent = `${exMin}/30 MIN`;
+            $('ringHrText').textContent = `${Math.round(state.hr)} LPM`;
+        }
+
+        function toggleWorkout() {
+            state.running = !state.running;
+            $('mainStartText').textContent = state.running ? 'PAUSAR' : 'REANUDAR';
+            $('mainStartIcon').className = state.running ? 'ph-fill ph-pause' : 'ph-fill ph-play';
+            $('sessionBadge').textContent = state.running ? 'EN VIVO' : 'PAUSA';
+        }
+        $('mainStartBtn').addEventListener('click', toggleWorkout);$('resetBtn').addEventListener('click', () => {
+            state.running = false; state.sec = 0; state.kcal = 0;
+            $('timeVal').textContent = '00:00:00';$('mainStartText').textContent = 'INICIAR';
+            updateUI();
+        });
+
+        setInterval(() => {
+            if (state.running) {
+                state.sec++;
+                state.kcal += computeMetrics().kcalMin / 60;
+                if (state.watchMode !== 'ble') {
+                    const targetHr = Math.min(192, 74 + (state.bpm - 60) * 0.65 + state.poseEnergy * 0.2);
+                    state.hr += (targetHr - state.hr) * 0.25;
+                }
+                const h = String(Math.floor(state.sec / 3600)).padStart(2, '0');
+                const m = String(Math.floor((state.sec % 3600) / 60)).padStart(2, '0');
+                const s = String(state.sec % 60).padStart(2, '0');
+                $('timeVal').textContent = `${h}:${m}:${s}`;
+            }
+            updateUI();
+        }, 1000);
+
+        $('modalitySelect').addEventListener('change', e => { state.mod = +e.target.value; updateUI(); });
+        document.querySelectorAll('.add-min-btn').forEach(b => b.addEventListener('click', () => {
+            const mins = +b.dataset.min; state.sec += mins * 60;
+            state.kcal += computeMetrics().kcalMin * mins;
+            updateUI();
+        }));
+        $('weightRange').addEventListener('input', e => { state.weight = +e.target.value; $('weightLabel').textContent = `${state.weight.toFixed(1)} kg`; updateUI(); });
+        $('heightRange').addEventListener('input', e => { state.height = +e.target.value; $('heightLabel').textContent = `${state.height} cm`; updateUI(); });
+
+        // Apple Watch BLE + Puente Salud
+        async function connectBleWatch() {
+            if (!navigator.bluetooth) { activateHealthBridge(); return; }
+            try {
+                const device = await navigator.bluetooth.requestDevice({ filters: [{ services: ['heart_rate'] }] });
+                const server = await device.gatt.connect();
+                const service = await server.getPrimaryService('heart_rate');
+                const char = await service.getCharacteristic('heart_rate_measurement');
+                await char.startNotifications();
+                char.addEventListener('characteristicvaluechanged', e => {
+                    const v = e.target.value;
+                    state.hr = (v.getUint8(0) & 0x1) ? v.getUint16(1, true) : v.getUint8(1);
+                    updateUI();
+                });
+                state.watchConnected = true; state.watchMode = 'ble';
+                $('hrSourceTag').textContent = 'Watch BLE';
+                $('watchDot').className = 'w-2.5 h-2.5 rounded-full bg-energy-lime animate-ping';$('watchModal').classList.add('hidden');
+            } catch (e) {
+                $('healthSyncLog').textContent = 'BLE cancelado. Usa el Puente con App Salud.';
+            }
+        }
+
+        function activateHealthBridge() {
+            state.watchConnected = true; state.watchMode = 'bridge';
+            $('hrSourceTag').textContent = 'Salud';
+            $('watchDot').className = 'w-2.5 h-2.5 rounded-full bg-energy-lime animate-ping';$('syncHealthKitText').textContent = 'App Salud Activa ✓';
+            $('watchModal').classList.add('hidden');
+            updateUI();
+        }
+
+        $('openWatchModalBtn').addEventListener('click', () => {$('watchModal').classList.remove('hidden'); $('watchModal').classList.add('flex'); });$('closeWatchModalBtn').addEventListener('click', () => { $('watchModal').classList.add('hidden');$('watchModal').classList.remove('flex'); });
+        $('connectBleBtn').addEventListener('click', connectBleWatch);$('modalBleConnectBtn').addEventListener('click', connectBleWatch);
+        $('syncHealthKitBtn').addEventListener('click', activateHealthBridge);$('modalHealthBridgeBtn').addEventListener('click', activateHealthBridge);
+
+        $('exportHealthJsonBtn').addEventListener('click', () => {
+            const blob = new Blob([JSON.stringify({
+                app: 'PulseBurn Studio',
+                durationSeconds: state.sec,
+                caloriesKcal: +state.kcal.toFixed(2),
+                originalTrackBpm: state.originalTrackBpm,
+                liveTrainingBpm: state.bpm,
+                playbackRate: state.playbackRate
+            }, null, 2)], { type: 'application/json' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = `AppleHealth_PulseBurn_${Date.now()}.json`;
+            a.click();
+        });
+
+        updateUI();
+    </script>
+</body>
+</html>
